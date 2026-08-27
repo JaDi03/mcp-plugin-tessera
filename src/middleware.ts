@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { TesseraPluginConfig, UsageMetadata } from "./types.js";
 import { TesseraSidecarClient } from "./sidecar-client.js";
 import { createCreatorRouter } from "./admin/router.js";
@@ -10,6 +9,12 @@ import type { Router } from "express";
 export interface WrappedToolResult<T> {
   result: T;
   usage: UsageMetadata;
+}
+
+function isBillableUserId(userId: string): boolean {
+  if (userId.startsWith("email:") && userId.length > "email:".length) return true;
+  if (userId.startsWith("social:") && userId.length > "social:".length) return true;
+  return /^agent:0x[a-fA-F0-9]{40}$/.test(userId);
 }
 
 /**
@@ -37,24 +42,31 @@ export class TesseraMcpWrapper {
 
     return async (args: TArgs, callerUserId?: string): Promise<WrappedToolResult<TResult>> => {
       const startMs = Date.now();
-      const userId = callerUserId || `agent_${randomUUID().slice(0, 8)}`;
+      const userId =
+        typeof callerUserId === "string" && isBillableUserId(callerUserId)
+          ? callerUserId
+          : "";
 
-      // Notify Tessera of session start
-      this.client
-        .startSession({
-          userId,
-          resourceId: toolName,
-          ratePerSecond,
-          metadata: { toolName, startMs: String(startMs) },
-        })
-        .catch(() => {});
+      if (userId) {
+        this.client
+          .startSession({
+            userId,
+            resourceId: toolName,
+            ratePerSecond,
+            metadata: { toolName, startMs: String(startMs) },
+          })
+          .catch(() => {});
+      } else {
+        console.warn(
+          "[TesseraPlugin] Skipping ingest: pass callerUserId as agent:0x... (Circle Agent Stack) or email:/social: for humans."
+        );
+      }
 
       try {
         const result = await handler(args);
         const endMs = Date.now();
 
-        // Notify Tessera of session stop
-        this.client.stopSession(userId).catch(() => {});
+        if (userId) this.client.stopSession(userId).catch(() => {});
 
         const durationSeconds = Math.max(
           parseFloat(((endMs - startMs) / 1000).toFixed(3)),
@@ -71,8 +83,7 @@ export class TesseraMcpWrapper {
           },
         };
       } catch (err) {
-        // Ensure session stops on error
-        this.client.stopSession(userId).catch(() => {});
+        if (userId) this.client.stopSession(userId).catch(() => {});
         throw err;
       }
     };

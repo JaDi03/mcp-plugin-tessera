@@ -55,6 +55,10 @@ export function createCreatorRouter(client: TesseraSidecarClient): Router {
       payoutWallet: client.getPayoutWallet(),
       defaultRatePerSecond: client.getDefaultRate(),
       sidecarUrl: client.getSidecarUrl(),
+      tesseraPublicUrl: (
+        process.env.TESSERA_PUBLIC_URL ||
+        client.getSidecarUrl()
+      ).replace(/\/$/, ""),
     });
   });
 
