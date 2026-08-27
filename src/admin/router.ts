@@ -55,11 +55,38 @@ export function createCreatorRouter(client: TesseraSidecarClient): Router {
       payoutWallet: client.getPayoutWallet(),
       defaultRatePerSecond: client.getDefaultRate(),
       sidecarUrl: client.getSidecarUrl(),
-      tesseraPublicUrl: (
-        process.env.TESSERA_PUBLIC_URL ||
-        client.getSidecarUrl()
-      ).replace(/\/$/, ""),
     });
+  });
+
+  async function sendSidecarRelay(req: express.Request, res: express.Response, sidecarPathAndQuery: string) {
+    try {
+      const hasBody = req.method !== "GET" && req.method !== "HEAD";
+      const upstream = await client.relayRequest(sidecarPathAndQuery, {
+        method: req.method,
+        contentType: req.headers["content-type"]
+          ? String(req.headers["content-type"])
+          : undefined,
+        body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
+      });
+      if (upstream.contentType) res.setHeader("Content-Type", upstream.contentType);
+      res.status(upstream.status).send(upstream.body);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: `Tessera sidecar unreachable: ${msg}` });
+    }
+  }
+
+  router.get("/assets/:file", async (req, res) => {
+    const file = String(req.params.file || "");
+    if (!client.isRelayAssetFile(file)) {
+      res.status(404).end();
+      return;
+    }
+    await sendSidecarRelay(req, res, `/assets/${file}`);
+  });
+
+  router.use("/api/core", async (req, res) => {
+    await sendSidecarRelay(req, res, `/api/core${req.url}`);
   });
 
   return router;
