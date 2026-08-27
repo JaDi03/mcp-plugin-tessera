@@ -47,10 +47,9 @@ export class TesseraSidecarClient {
   public async sendSignedIngest(
     path: string,
     body: Record<string, unknown>
-  ): Promise<boolean> {
+  ): Promise<{ ok: boolean; status: number; error?: string }> {
     if (!this.webhookSecret) {
-      console.debug("[TesseraPlugin] Webhook secret not configured. Skipping signed ingest.");
-      return false;
+      return { ok: false, status: 503, error: "Webhook secret not configured" };
     }
 
     const url = `${this.sidecarUrl}${path}`;
@@ -80,11 +79,13 @@ export class TesseraSidecarClient {
       });
 
       clearTimeout(timeout);
-      return response.ok;
+      if (response.ok) return { ok: true, status: response.status };
+      const error = await response.text();
+      return { ok: false, status: response.status, error };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[TesseraPlugin] Ingest to ${path} failed: ${msg}`);
-      return false;
+      return { ok: false, status: 503, error: msg };
     }
   }
 
@@ -96,7 +97,7 @@ export class TesseraSidecarClient {
     resourceId: string;
     ratePerSecond?: number;
     metadata?: Record<string, string>;
-  }): Promise<boolean> {
+  }): Promise<{ ok: boolean; status: number; error?: string }> {
     const rate = (params.ratePerSecond ?? this.defaultRate).toString();
     const payload: TesseraStartSessionPayload = {
       userId: params.userId,
@@ -112,7 +113,7 @@ export class TesseraSidecarClient {
   /**
    * Stops an active billing session in Tessera when tool execution completes.
    */
-  public async stopSession(userId: string): Promise<boolean> {
+  public async stopSession(userId: string): Promise<{ ok: boolean; status: number; error?: string }> {
     return this.sendSignedIngest("/api/core/v1/sessions/stop", { userId });
   }
 

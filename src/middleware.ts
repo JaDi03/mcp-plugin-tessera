@@ -12,9 +12,15 @@ export interface WrappedToolResult<T> {
 }
 
 function isBillableUserId(userId: string): boolean {
-  if (userId.startsWith("email:") && userId.length > "email:".length) return true;
-  if (userId.startsWith("social:") && userId.length > "social:".length) return true;
   return /^agent:0x[a-fA-F0-9]{40}$/.test(userId);
+}
+
+export class TesseraPaymentRequiredError extends Error {
+  readonly status = 402;
+  constructor(message: string) {
+    super(message);
+    this.name = "TesseraPaymentRequiredError";
+  }
 }
 
 /**
@@ -47,18 +53,23 @@ export class TesseraMcpWrapper {
           ? callerUserId
           : "";
 
-      if (userId) {
-        this.client
-          .startSession({
-            userId,
-            resourceId: toolName,
-            ratePerSecond,
-            metadata: { toolName, startMs: String(startMs) },
-          })
-          .catch(() => {});
-      } else {
-        console.warn(
-          "[TesseraPlugin] Skipping ingest: pass callerUserId as agent:0x... (Circle Agent Stack) or email:/social: for humans."
+      if (!userId) {
+        throw new TesseraPaymentRequiredError(
+          "Payment required. Pass callerUserId as agent:0x... after Tessera agent fund-session"
+        );
+      }
+
+      const started = await this.client.startSession({
+        userId,
+        resourceId: toolName,
+        ratePerSecond,
+        metadata: { toolName, startMs: String(startMs) },
+      });
+      if (!started.ok) {
+        throw new TesseraPaymentRequiredError(
+          started.status === 402
+            ? "Agent Gateway session is not funded"
+            : `Tessera session start failed (${started.status})`
         );
       }
 
