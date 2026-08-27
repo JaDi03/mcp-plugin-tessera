@@ -203,4 +203,43 @@ export class TesseraSidecarClient {
   public getSidecarUrl(): string {
     return this.sidecarUrl;
   }
+
+  public isRelayAssetFile(fileName: string): boolean {
+    return (
+      fileName === "paywall.bundle.js" ||
+      fileName === "paywall.css" ||
+      fileName === "creator-earnings.css"
+    );
+  }
+
+  public async relayRequest(
+    sidecarPathAndQuery: string,
+    init: { method: string; contentType?: string; body?: string }
+  ): Promise<{ status: number; contentType: string | null; body: Buffer }> {
+    const path = sidecarPathAndQuery.startsWith("/")
+      ? sidecarPathAndQuery
+      : `/${sidecarPathAndQuery}`;
+    const url = `${this.sidecarUrl}${path}`;
+    const headers: Record<string, string> = {};
+    if (init.contentType) headers["Content-Type"] = init.contentType;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(url, {
+        method: init.method,
+        headers,
+        body: init.body,
+        signal: controller.signal,
+      });
+      const body = Buffer.from(await response.arrayBuffer());
+      return {
+        status: response.status,
+        contentType: response.headers.get("content-type"),
+        body,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }

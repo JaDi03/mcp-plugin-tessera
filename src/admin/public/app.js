@@ -40,16 +40,15 @@ async function loadConfigAndMount() {
     }
 
     const wallet = (data.payoutWallet || "").trim();
-    const apiBase = String(data.tesseraPublicUrl || data.sidecarUrl || "").replace(/\/$/, "");
+    const pathPrefix = window.location.pathname
+      .replace(/\/index\.html$/, "")
+      .replace(/\/$/, "");
+    const apiBase = window.location.origin + pathPrefix;
     const host = document.getElementById("tessera-creator-host");
     if (!host) return;
 
     if (!wallet || !/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
       host.innerHTML = "<p class=\"balance-desc\">Set TESSERA_PAYOUT_WALLET to load earnings.</p>";
-      return;
-    }
-    if (!apiBase) {
-      host.innerHTML = "<p class=\"balance-desc\">Set TESSERA_URL so the Tessera bundle can load.</p>";
       return;
     }
 
